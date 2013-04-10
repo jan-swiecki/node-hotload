@@ -1,7 +1,11 @@
 *.sublime-*
-*.js
 hotrequire.co
+hotrequire.js
 test.co
+test.js
 test/
 graceful_unload.co
+graceful_unload.js
 testModule.co
+testModule.js
+npm-debug.log

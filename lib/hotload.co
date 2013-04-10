@@ -4,26 +4,36 @@ fs     = require \fs
 colors = require \colors
 crypto = require 'crypto'
 
-# stack = require \callsite
+stack = require \callsite
 
 l = -> console.log "--".yellow.bold, it
 
-MODULE = require("module")
-function resolveFilenameParent(request)
-	MODULE._resolveFilename(request, module.parent)
+resolveCalledFilename = let
+	MODULE = require("module")
+	(request, stackLevel)->
+		moduleFilename = stack()[stackLevel].getFileName()
+		MODULE._resolveFilename(request, require.cache[moduleFilename])
 
-md5 = (string)->crypto.createHash \md5 .update string .digest \hex
+# function getCalledModule
+# 	moduleFilename = stack()[1].getFileName()
+# 	require.cache[moduleFilename]
+
+# x = resolveCalledFilename("./testModule")
+
+sha1 = (string)->crypto.createHash \sha1 .update string .digest \hex
 
 hashSums     = {}
 fileWatchers = {}
 
 headStr = -> it.substr(0,7)
 
-onFileChange = (path,callback)->
+onFileChange = require \./onFileChange.js
+
+onFileChange2 = (path,callback)->
 
 	function hashSum
 		if fs.existsSync path
-			md5 fs.readFileSync path
+			sha1 fs.readFileSync path
 		else
 			l "warning, #path is not available anymore!".red.bold
 			hashSums[path]
@@ -50,97 +60,86 @@ onFileChange = (path,callback)->
 
 					# on some systems change event is called twice
 					# so wait for 1000ms
-					fileWatchers[path].close!
-					setTimeout (-> init!), 1000
+					# fileWatchers[path].close!
+					# setTimeout (-> init!), 1000
 
 	if typeof callback is \function
 		init!
-		return {stop: -> fileWatchers[path].close!}
+		return {stop: (-> fileWatchers[path].close!), reload: init}
 	else
 		throw new Error "No callback for onFileChange"
 
-# path, [boolean watch], [function callback]
-module.exports = (path,not_watch,callback)->
 
-	# debug arguments.callee.toString()
+# path, [function callback]
+module.exports = (path,callback)->
 
-	# calledFrom = __stack[1].getFileName()
-	# calledFrom = stack()[1].getFileName()
-	# calledFromDir = PATH.dirname(calledFrom)
+	# if not callback? and typeof not_watch is \function
+	# 	callback := not_watch
+	# 	not_watch := false
 
-	if not callback? and typeof not_watch is \function
-		callback := not_watch
-		not_watch := false
-
-	# set extension if not set
-	if not path.match /\.[a-z0-9]+$/ then path := "#path.js"
-
-	# convert relative path to absolute path
-
-	abs_path = resolveFilenameParent path
-	# if path.match /^\./ then abs_path = PATH.resolve(PATH.dirname(calledFrom) + "/" + path)
-	# else then abs_path = PATH.resolve(path)
-	# l path
-	# l calledFromDir + PATH.sep + path
-	# l module.parent.require.resolve(calledFromDir + PATH.sep + path)
-
-	main_dir = PATH.dirname require.main.filename
-	rel_path = abs_path.replace //#{main_dir}//, ''
+	absPath = resolveCalledFilename path, 2
+	mainDir = PATH.dirname require.main.filename
+	relPath = absPath.replace //#{mainDir}//, ''
 
 	# first load
-	if not require.cache[abs_path]?
+	if not require.cache[absPath]?
 
-		l "Loading #rel_path"
+		l "Loading #relPath"
 
-		_module = require abs_path
+		_module = require absPath
 
-		_module.hlInit?!
+		if typeof _module is not \object
+			l "[warn] Hotload only works with objects, #relPath will not be reloaded"
+			return _module
+		else
+			_module.hlInit?!
 
-		callback?(_module)
+			callback?(_module)
 
-		if not not_watch
-			# watch after
-			onFileChange abs_path, ->
-				module.exports abs_path,not_watch,callback
+			onFileChange absPath, ->
+				# module.exports absPath,not_watch,callback
+				module.exports absPath,callback
 
-		return _module
+			return _module
 
 	# reload
+	else
 
-	l "Reloading #rel_path"
+		l "Reloading #relPath"
 
-	abs_tmp_path = abs_path + ".tmp"
+		absTmpPath = absPath + ".tmp"
 
-	# replace reference in cache
-	require.cache[abs_tmp_path] = require.cache[abs_path]
-	delete require.cache[abs_path]
+		# replace reference in cache
+		require.cache[absTmpPath] = require.cache[absPath]
+		delete require.cache[absPath]
 
-	# require copied module
-	_module = require abs_path
+		# require copied module
+		_module = require absPath
 
-	# flip back
-	require.cache[abs_path] = require.cache[abs_tmp_path]
-	delete require.cache[abs_tmp_path]
+		# flip back
+		require.cache[absPath] = require.cache[absTmpPath]
+		delete require.cache[absTmpPath]
 
-	## replace all references from require.cache[abs_path] with require.cache[abs_tmp_path]
-	# for k in require.cache[abs_tmp_path]
-	# 	require.cache[abs_path][k] = require.cache[abs_tmp_path][k]
+		## replace all references from require.cache[absPath] with require.cache[absTmpPath]
+		# for k in require.cache[absTmpPath]
+		# 	require.cache[absPath][k] = require.cache[absTmpPath][k]
 
-	# unload module and remove all previous properties
-	require.cache[abs_path].exports.hlUnload?! # unload
+		# unload module and remove all previous properties
+		require.cache[absPath].exports.hlUnload?! # unload
 
-	for k in require.cache[abs_path].exports
-		require.cache[abs_path].exports[k] = null # garbage collect
+		# set all properties to null
+		for k in require.cache[absPath].exports
+			require.cache[absPath].exports[k] = null # garbage collect
 
-	# explicitly execute garbage collector
-	global.gc?!
+		# explicitly execute garbage collector
+		global.gc?!
 
-	for k in _module
-		require.cache[abs_path].exports[k] = _module[k]
+		for k in _module
+			require.cache[absPath].exports[k] = _module[k]
 
-	require.cache[abs_path].exports.hlInit?! # initialize
-	
-	callback?(require.cache[abs_path].exports)
+		require.cache[absPath].exports.hlInit?! # initialize
+		
+		callback?(require.cache[absPath].exports)
 
-	return require.cache[abs_path].exports
+		return require.cache[absPath].exports
 
