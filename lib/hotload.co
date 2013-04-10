@@ -1,0 +1,146 @@
+exec   = require \child_process .exec
+PATH   = require \path
+fs     = require \fs
+colors = require \colors
+crypto = require 'crypto'
+
+# stack = require \callsite
+
+l = -> console.log "--".yellow.bold, it
+
+MODULE = require("module")
+function resolveFilenameParent(request)
+	MODULE._resolveFilename(request, module.parent)
+
+md5 = (string)->crypto.createHash \md5 .update string .digest \hex
+
+hashSums     = {}
+fileWatchers = {}
+
+headStr = -> it.substr(0,7)
+
+onFileChange = (path,callback)->
+
+	function hashSum
+		if fs.existsSync path
+			md5 fs.readFileSync path
+		else
+			l "warning, #path is not available anymore!".red.bold
+			hashSums[path]
+
+	function isDifferentHash
+		h = hashSum!
+		if h is not hashSums[path]
+			l "#path #{headStr(h)} --> #{headStr(hashSums[path])}"
+			hashSums[path] = h
+			true
+		else
+			false
+
+	function init
+		if not fs.existsSync path
+			l "Path #path does not exists"
+			false
+		else
+			hashSums[path] || hashSums[path] = hashSum!
+			fileWatchers[path] = fs.watch path, (event)->
+				l event
+				if event is 'change' and isDifferentHash!
+					callback path
+
+					# on some systems change event is called twice
+					# so wait for 1000ms
+					fileWatchers[path].close!
+					setTimeout (-> init!), 1000
+
+	if typeof callback is \function
+		init!
+		return {stop: -> fileWatchers[path].close!}
+	else
+		throw new Error "No callback for onFileChange"
+
+# path, [boolean watch], [function callback]
+module.exports = (path,not_watch,callback)->
+
+	# debug arguments.callee.toString()
+
+	# calledFrom = __stack[1].getFileName()
+	# calledFrom = stack()[1].getFileName()
+	# calledFromDir = PATH.dirname(calledFrom)
+
+	if not callback? and typeof not_watch is \function
+		callback := not_watch
+		not_watch := false
+
+	# set extension if not set
+	if not path.match /\.[a-z0-9]+$/ then path := "#path.js"
+
+	# convert relative path to absolute path
+
+	abs_path = resolveFilenameParent path
+	# if path.match /^\./ then abs_path = PATH.resolve(PATH.dirname(calledFrom) + "/" + path)
+	# else then abs_path = PATH.resolve(path)
+	# l path
+	# l calledFromDir + PATH.sep + path
+	# l module.parent.require.resolve(calledFromDir + PATH.sep + path)
+
+	main_dir = PATH.dirname require.main.filename
+	rel_path = abs_path.replace //#{main_dir}//, ''
+
+	# first load
+	if not require.cache[abs_path]?
+
+		l "Loading #rel_path"
+
+		_module = require abs_path
+
+		_module.hlInit?!
+
+		callback?(_module)
+
+		if not not_watch
+			# watch after
+			onFileChange abs_path, ->
+				module.exports abs_path,not_watch,callback
+
+		return _module
+
+	# reload
+
+	l "Reloading #rel_path"
+
+	abs_tmp_path = abs_path + ".tmp"
+
+	# replace reference in cache
+	require.cache[abs_tmp_path] = require.cache[abs_path]
+	delete require.cache[abs_path]
+
+	# require copied module
+	_module = require abs_path
+
+	# flip back
+	require.cache[abs_path] = require.cache[abs_tmp_path]
+	delete require.cache[abs_tmp_path]
+
+	## replace all references from require.cache[abs_path] with require.cache[abs_tmp_path]
+	# for k in require.cache[abs_tmp_path]
+	# 	require.cache[abs_path][k] = require.cache[abs_tmp_path][k]
+
+	# unload module and remove all previous properties
+	require.cache[abs_path].exports.hlUnload?! # unload
+
+	for k in require.cache[abs_path].exports
+		require.cache[abs_path].exports[k] = null # garbage collect
+
+	# explicitly execute garbage collector
+	global.gc?!
+
+	for k in _module
+		require.cache[abs_path].exports[k] = _module[k]
+
+	require.cache[abs_path].exports.hlInit?! # initialize
+	
+	callback?(require.cache[abs_path].exports)
+
+	return require.cache[abs_path].exports
+

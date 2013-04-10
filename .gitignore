@@ -1,0 +1,7 @@
+*.sublime-*
+*.js
+hotrequire.co
+test.co
+test/
+graceful_unload.co
+testModule.co
