@@ -1,10 +1,8 @@
-exec   = require \child_process .exec
 PATH   = require \path
 fs     = require \fs
 colors = require \colors
-crypto = require 'crypto'
-
-stack = require \callsite
+crypto = require \crypto
+stack  = require \callsite
 
 l = -> console.log "--".yellow.bold, it
 
@@ -14,74 +12,19 @@ resolveCalledFilename = let
 		moduleFilename = stack()[stackLevel].getFileName()
 		MODULE._resolveFilename(request, require.cache[moduleFilename])
 
-# function getCalledModule
-# 	moduleFilename = stack()[1].getFileName()
-# 	require.cache[moduleFilename]
-
-# x = resolveCalledFilename("./testModule")
-
-sha1 = (string)->crypto.createHash \sha1 .update string .digest \hex
-
 hashSums     = {}
 fileWatchers = {}
 
-headStr = -> it.substr(0,7)
-
+headStr      = -> it.substr(0,7)
 onFileChange = require \./onFileChange.js
 
-onFileChange2 = (path,callback)->
-
-	function hashSum
-		if fs.existsSync path
-			sha1 fs.readFileSync path
-		else
-			l "warning, #path is not available anymore!".red.bold
-			hashSums[path]
-
-	function isDifferentHash
-		h = hashSum!
-		if h is not hashSums[path]
-			l "#path #{headStr(h)} --> #{headStr(hashSums[path])}"
-			hashSums[path] = h
-			true
-		else
-			false
-
-	function init
-		if not fs.existsSync path
-			l "Path #path does not exists"
-			false
-		else
-			hashSums[path] || hashSums[path] = hashSum!
-			fileWatchers[path] = fs.watch path, (event)->
-				l event
-				if event is 'change' and isDifferentHash!
-					callback path
-
-					# on some systems change event is called twice
-					# so wait for 1000ms
-					# fileWatchers[path].close!
-					# setTimeout (-> init!), 1000
-
-	if typeof callback is \function
-		init!
-		return {stop: (-> fileWatchers[path].close!), reload: init}
-	else
-		throw new Error "No callback for onFileChange"
-
-
-# path, [function callback]
 module.exports = (path,callback)->
-
-	# if not callback? and typeof not_watch is \function
-	# 	callback := not_watch
-	# 	not_watch := false
 
 	absPath = resolveCalledFilename path, 2
 	mainDir = PATH.dirname require.main.filename
 	relPath = absPath.replace //#{mainDir}//, ''
 
-	# first load
+	# First load case
 	if not require.cache[absPath]?
 
 		l "Loading #relPath"
@@ -97,26 +40,60 @@ module.exports = (path,callback)->
 			callback?(_module)
 
 			onFileChange absPath, ->
-				# module.exports absPath,not_watch,callback
 				module.exports absPath,callback
 
 			return _module
 
-	# reload
+	# Reload case
 	else
 
 		l "Reloading #relPath"
 
+		# All below code HAS to be synchronous!
+		# If node goes multi-threading this will be fun!
+
+		# In hlUnload you should put code that stops all
+		# event listeners, stops all asynchronous tasks
+		# (like setInterval) so that before unloading
+		# the module it will stop doing anything.
+		# 
+		# Otherwise after few hot reloads you will get
+		# errors that too many event listeners (yes they will
+		# pile up).
+		require.cache[absPath].exports.hlUnload?!
+
+		# Remove all previous module properties by setting them
+		# to null so that garbage collector can remove them from
+		# the face of the galaxy! (See: http://stackoverflow.com/a/5328761/1637178)
+		for k in require.cache[absPath].exports
+			require.cache[absPath].exports[k] = null
+
+		# If it is available call garbage collector.
+		# In order to make it available execute node
+		# with --expose_gc option.
+		global.gc?!
+
 		absTmpPath = absPath + ".tmp"
 
-		# replace reference in cache
+		# Reattach original module reference in require.cache
+		# so that when we call `require` it will load
+		# module from disk, not from cache AND we still
+		# have application-wide object references that
+		# we will replace with newly loaded properties.
+		# 
+		# [move to readme][You may think that we could just delete module from
+		# cache and then require(), but then we would loose
+		# all references to properties that were exposed
+		# in the first require (check the docs if it is not clear)]
 		require.cache[absTmpPath] = require.cache[absPath]
 		delete require.cache[absPath]
 
-		# require copied module
+		# Load new version of module.
 		_module = require absPath
 
-		# flip back
+		# Reattach back the original module reference
+		# so that application-wide references are not lost
+		# and made useless.
 		require.cache[absPath] = require.cache[absTmpPath]
 		delete require.cache[absTmpPath]
 
@@ -124,22 +101,18 @@ module.exports = (path,callback)->
 		# for k in require.cache[absTmpPath]
 		# 	require.cache[absPath][k] = require.cache[absTmpPath][k]
 
-		# unload module and remove all previous properties
-		require.cache[absPath].exports.hlUnload?! # unload
-
-		# set all properties to null
-		for k in require.cache[absPath].exports
-			require.cache[absPath].exports[k] = null # garbage collect
-
-		# explicitly execute garbage collector
-		global.gc?!
-
+		# In the original module reference replace all
+		# properties with new properties of recently
+		# loaded newer version of module (stored in _module).
 		for k in _module
 			require.cache[absPath].exports[k] = _module[k]
 
-		require.cache[absPath].exports.hlInit?! # initialize
+		# Execute module initializer.
+		require.cache[absPath].exports.hlInit?!
 		
+		# Execute callback
 		callback?(require.cache[absPath].exports)
 
+		# Return module reference
 		return require.cache[absPath].exports
 
