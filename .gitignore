@@ -1,9 +1,11 @@
 *.sublime-*
+node_modules
 hotrequire.co
 hotrequire.js
 test.co
 test.js
 test/
+docs/
 graceful_unload.co
 graceful_unload.js
 testModule.co

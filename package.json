@@ -1,6 +1,7 @@
 {
   "name": "hotload",
-  "version": "0.0.3",
+  "version": "0.0.5",
+  "license": "MIT",
   "description": "Hot load (hot require) for NodeJS. It's like JRebel but for NodeJS.",
   "main": "lib/hotload.js",
   "directories": {
@@ -13,6 +14,10 @@
     "type": "git",
     "url": "https://github.com/jan-swiecki/node-hotload"
   },
+  "engines":
+  {
+    "node": "0.10.*"
+  },
   "keywords": [
     "hotload",
     "hotrequire",
@@ -20,9 +25,14 @@
   ],
   "dependencies":
   {
-    "colors": "colors@0.6.0-1",
-    "callsite": "callsite@1.0.0"
+    "colors": "0.6.0-1",
+    "callsite": "1.0.0"
   },
-  "author": "Jan Święcki",
+  "author":
+  {
+    "name": "Jan Święcki",
+    "email": "jan.swiecki@gmail.com",
+    "url": "https://github.com/jan-swiecki/node-hotload"
+  },
   "gitHead": "14a17e38f12c0a3845eefaae7265afe5851b0d12"
 }

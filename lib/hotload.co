@@ -73,6 +73,10 @@ module.exports = (path,callback)->
 		# with --expose_gc option.
 		global.gc?!
 
+		# delete properties
+		for k in require.cache[absPath].exports
+			delete require.cache[absPath].exports[k]
+
 		absTmpPath = absPath + ".tmp"
 
 		# Reattach original module reference in require.cache
