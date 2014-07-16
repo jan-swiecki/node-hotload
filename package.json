@@ -1,6 +1,6 @@
 {
   "name": "hotload",
-  "version": "0.0.5",
+  "version": "0.1.0",
   "license": "MIT",
   "description": "Hot load (hot require) for NodeJS. It's like JRebel but for NodeJS.",
   "main": "lib/hotload.js",

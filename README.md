@@ -1,6 +1,6 @@
 # Hotload - Hot code reload for NodeJS
 
-### Version 0.0.5
+### Version 0.1.0
 
 ## TL;DR:
 
@@ -35,11 +35,11 @@ setInterval(function()
 
 ### Introduction
 
-The purpose is reload library without application shut down.
+The purpose is to reload libraries without application shut down.
 
 It is probably not suitable for production use.
 
-Hotload only works on object modules. Non-object modules (E.g. `module.exports = "abc"`) will be `require`d normally but they cannot be hot reloaded. If you don't see why you should google about JavaScript's variable references and its pass-by-value nature.
+Hotload only works on object modules. Non-object modules (E.g. `module.exports = "abc"`) will be `require`d normally but they cannot be hot reloaded. If you don't see why you should google about JavaScript's variable references and its pass-by-value nature. However if you know how to hack NodeJS around this and achive immutables hot reloading let me know.
 
 ```javascript
 // index.js
@@ -49,17 +49,16 @@ hotload = require("hotload");
 // Callback's first argument is the module object, which is exactly the same object
 // as returned by `hotload`.
 lib = hotload("./lib.js", function(lib2){
-    // (lib === lib2) is true
+    // (lib === lib2) is true first time
     console.log("lib has loaded/reloaded!");
 });
 
-// Callback function is called on first module load
-// and on every module reload.
+// Callback function is called on first module load and on every module reload.
 ```
 
-From now on if `lib.js` is modified it will be reloaded. How does it work? On `lib.js` file change hotload replaces all properties of original `lib` object with new ones.
+From now on if `lib.js` is modified it will be reloaded. How does the mechanism work? When `lib.js` is changed hotload replaces all properties of original `lib` object with new ones.
 
-E.g. old `lib.js` could be:
+E.g. when we have old `lib.js` like this:
 
 ```javascript
 // old lib.js
@@ -69,7 +68,7 @@ module.exports = {
 };
 ```
 
-And new `lib.js` could be
+And new `lib.js` like this:
 
 ```javascript
 // new lib.js
@@ -79,7 +78,7 @@ module.exports = {
 };
 ```
 
-In that case during runtime of `index.js` when we save `lib.js` (old version to new version) then `lib` object will become:
+then during runtime of `index.js` when we save `lib.js` (old version to new version) `lib` object will become (during runtime of `index.js` module):
 
 ```javascript
 {
@@ -88,11 +87,11 @@ In that case during runtime of `index.js` when we save `lib.js` (old version to 
 }
 ```
 
-So after hot reload `lib` object can still be used. You don't need to use callback method to replace your references at all, it just works.
+So after hot reloading `lib.js` the `lib` object can still be used. You don't need to use callback method to replace your references at all, it just works.
 
 ### Additional information
 
-Hotload will look out for imported object's methods `hlInit` and `hlUnload`. E.g.:
+Hotload will look out for imported object's methods `hlInit` and `hlUnload` and execute then during start/shutdown of that module. E.g.:
 
 ```javascript
 module.exports = {
@@ -110,3 +109,7 @@ module.exports = {
 As mentioned in example's `hlUnload` function -- if your module has event listeners or any other long running tasks (e.g. `setInterval`) you should shut them down while unloading module, because if you don't when module is reloaded it will duplicate event listeners.
 
 You could say "Hey, wait a second! After module reload old module is gone, and I don't have access to event listeners so they must be gone too!". Wrong. They are still running and worse -- you don't have access to them any more!
+
+### License
+
+MIT
