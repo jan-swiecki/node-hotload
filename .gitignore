@@ -2,9 +2,7 @@
 node_modules
 hotrequire.co
 hotrequire.js
-test.co
-test.js
-test/
+test/filewatch.js
 docs/
 graceful_unload.co
 graceful_unload.js

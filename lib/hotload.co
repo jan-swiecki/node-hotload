@@ -3,8 +3,9 @@ fs     = require \fs
 colors = require \colors
 crypto = require \crypto
 stack  = require \callsite
+Optional  = require \./optional.js
 
-l = -> console.log "--".yellow.bold, it
+l = !-> console.log "--".yellow.bold, it
 
 resolveCalledFilename = let
 	MODULE = require("module")
@@ -18,29 +19,64 @@ fileWatchers = {}
 headStr      = -> it.substr(0,7)
 onFileChange = require \./onFileChange.js
 
-module.exports = (path,callback)->
+# onFileChange handlers
+fileHandlers = {}
+
+moduleLoader = (relPath, absPath, callback)->
+	ret = Optional.absent()
+	try
+		l "(#relPath) Begin output"
+		m = require absPath
+		ret := Optional.of(m)
+		l "(#relPath) End output"
+		l "(#relPath) Module loaded successfully"
+		callback?(,ret)
+	catch ex
+		l "(#relPath) End output"
+		l ("(#relPath) Error loading module: "+ex.message).red.bold
+		callback?(,ret)
+
+	return ret
+
+module.exports = (path,callback,args)->
+
+	if typeof args is \undefined
+		if typeof callback is not \function
+			args := callback
+
+	args := if Array.isArray(args) then args else []
 
 	absPath = resolveCalledFilename path, 2
 	mainDir = PATH.dirname require.main.filename
-	relPath = absPath.replace //#{mainDir}//, ''
+	relPath = PATH.relative mainDir, absPath
 
 	# First load case
 	if not require.cache[absPath]?
 
-		l "Loading #relPath"
+		l "Loading #absPath"
 
-		_module = require absPath
+		moduleOptional = moduleLoader(relPath, absPath)
+
+		if not moduleOptional.isPresent()
+			_module = {
+				error: true
+			}
+		else
+			_module = moduleOptional.get()
 
 		if typeof _module is not \object
 			l "[warn] Hotload only works with objects, #relPath will not be reloaded"
 			return _module
 		else
-			_module.hlInit?!
+			_module.hlInit?.apply this, args
 
 			callback?(_module)
 
-			onFileChange absPath, ->
-				module.exports absPath,callback
+			l "fileHandlers[#relPath] = "+fileHandlers[absPath]
+			if not fileHandlers[absPath]
+				l "Attaching to #relPath"
+				fileHandlers[absPath] = onFileChange absPath, ->
+					module.exports absPath,callback
 
 			return _module
 
@@ -93,7 +129,13 @@ module.exports = (path,callback)->
 		delete require.cache[absPath]
 
 		# Load new version of module.
-		_module = require absPath
+		moduleOptional = moduleLoader(relPath, absPath)
+
+		if not moduleOptional.isPresent()
+			return
+		else
+			_module = moduleOptional.get()
+		
 
 		# Reattach back the original module reference
 		# so that application-wide references are not lost
@@ -112,7 +154,7 @@ module.exports = (path,callback)->
 			require.cache[absPath].exports[k] = _module[k]
 
 		# Execute module initializer.
-		require.cache[absPath].exports.hlInit?!
+		require.cache[absPath].exports.hlInit?.apply this, args
 		
 		# Execute callback
 		callback?(require.cache[absPath].exports)
@@ -120,3 +162,11 @@ module.exports = (path,callback)->
 		# Return module reference
 		return require.cache[absPath].exports
 
+# stop watching module in libPath
+module.exports.stop = !(libPath)->
+	absPath = resolveCalledFilename libPath, 2
+	h = fileHandlers[absPath]
+	if h then
+		l "Stopping watch at #libPath"
+		h.close?!
+		delete fileHandlers[absPath]

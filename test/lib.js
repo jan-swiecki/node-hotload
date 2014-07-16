@@ -1,0 +1,3 @@
+module.exports = {
+	"x": "abc"
+}
